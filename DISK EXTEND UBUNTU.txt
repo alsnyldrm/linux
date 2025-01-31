@@ -1,0 +1,15 @@
+cfdisk
+fdisk -l /dev/sda
+parted
+print
+resizepart
+3
+quıit
+pvresize /dev/sda3
+lvextend -l +100%FREE /dev/mapper/ubuntu--vg-ubuntu--lv
+e2fsck -f /dev/mapper/ubuntu--vg-ubuntu--lv
+reboot -n
+pvresize /dev/sda3
+lvextend -l +100%FREE /dev/mapper/ubuntu--vg-ubuntu--lv
+resize2fs /dev/mapper/ubuntu--vg-ubuntu--lv
+df -h
