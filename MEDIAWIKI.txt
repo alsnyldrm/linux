@@ -1,0 +1,74 @@
+sudo apt update -y && sudo apt upgrade -y
+-----------------------------------------------------------------------------------------------------------
+sudo apt-get install php php-apcu php-common php-intl php-json php-mbstring php-mysql php-xml apache2 -y
+sudo systemctl enable --now apache2
+systemctl status apache2 --no-page -l
+a2enmod ssl
+a2enmod headers
+-----------------------------------------------------------------------------------------------------------
+sudo apt install php php-calendar php-dom php-fileinfo php-intl php-json php-mbstring php-xml php-xmlreader -y
+sudo apt update -y
+-----------------------------------------------------------------------------------------------------------
+apt install mariadb-server -y
+mysql_secure_installation
+systemctl enable --now mariadb
+systemctl status mariadb --no-pager
+-----------------------------------------------------------------------------------------------------------
+mysql
+CREATE DATABASE wikidb;
+CREATE USER 'mediawiki'@'localhost' IDENTIFIED BY 'vF.r6!jJweXTN_cv6Memft!VzNf!';
+GRANT ALL PRIVILEGES ON wikidb.* TO 'mediawiki'@'localhost' WITH GRANT OPTION;
+flush privileges;
+quit;
+-----------------------------------------------------------------------------------------------------------
+cd /tmp
+wget https://releases.wikimedia.org/mediawiki/1.40/mediawiki-1.40.0.tar.gz
+tar -zxvf mediawiki-1.40.0.tar.gz
+mkdir -p /var/www/html/wiki
+mv mediawiki*/* /var/www/html/wiki
+chown -R www-data:www-data /var/www/html/wiki
+-----------------------------------------------------------------------------------------------------------
+mv /etc/apache2/sites-enabled/000-default.conf /etc/apache2/sites-enabled/000-default.conf.old
+nano /etc/apache2/sites-enabled/000-default.conf
+
+<VirtualHost *:80>
+        ServerName howtodo.fbu.edu.tr
+        ServerAlias howtodo.fbu.edu.tr
+        DocumentRoot /var/www/html/wiki
+        <Directory "/var/www/html/wiki">
+                Options Indexes FollowSymLinks MultiViews
+                Order allow,deny
+                Allow from all
+                Require all granted
+                AllowOverride all
+                Satisfy Any
+        </Directory>
+</VirtualHost>
+<VirtualHost *:443>
+        ServerName howtodo.fbu.edu.tr
+        ServerAlias howtodo.fbu.edu.tr
+        DocumentRoot /var/www/html/wiki
+        <Directory "/var/www/html/wiki">
+                Options Indexes FollowSymLinks MultiViews
+                Order allow,deny
+                Allow from all
+                Require all granted
+                AllowOverride all
+                Satisfy Any
+        </Directory>
+    ErrorLog "/var/log/apache2/wiki_log"
+    CustomLog "/var/log/apache2/wiki-access_log" combined
+    SSLEngine on
+    SSLCertificateFile /etc/certificate/fbu.edu.tr.crt
+    SSLCertificateKeyFile /etc/certificate/fbu.edu.tr.key
+    SSLCertificateChainFile /etc/certificate/ca.fbu.edu.tr.crt
+</VirtualHost>
+-----------------------------------------------------------------------------------------------------------
+systemctl restart apache2
+-----------------------------------------------------------------------------------------------------------
+https://howtodo.fbu.edu.tr/
+-----------------------------------------------------------------------------------------------------------
+LocalSettings.php dosyasını aşağıdaki konuma atıyoruz
+/var/www/html/wiki/
+-----------------------------------------------------------------------------------------------------------
+chown www-data:www-data /var/www/html/wiki/LocalSettings.php
