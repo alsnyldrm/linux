@@ -1,0 +1,208 @@
+apt update && sudo apt upgrade -y
+
+nano /etc/apt/sources.list.d/pdns.list
+deb [signed-by=/etc/apt/keyrings/auth-49-pub.asc] http://repo.powerdns.com/ubuntu focal-auth-49 main
+nano /etc/apt/preferences.d/auth-49
+Package: auth*
+Pin: origin repo.powerdns.com
+Pin-Priority: 600
+# Save and close the file.
+install -d /etc/apt/keyrings; curl https://repo.powerdns.com/FD380FBB-pub.asc | sudo tee /etc/apt/keyrings/auth-49-pub.asc
+apt-get update
+
+apt install mariadb-server mariadb-client pdns-server pdns-backend-mysql virtualenv jq -y
+mysql
+create database pda;
+exit
+mysql pda < /usr/share/doc/pdns-backend-mysql/schema.mysql.sql
+mysql
+grant all privileges on pda.* TO 'pda'@'localhost' identified by 'WZFaug6nwv-kzy4mwz';
+flush privileges;
+use pda;
+show tables;
+exit;
+systemctl disable --now systemd-resolved
+rm -rf /etc/resolv.conf
+echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf
+
+nano /etc/powerdns/pdns.d/pdns.local.gmysql.conf
+
+# MySQL Configuration
+#
+# Launch gmysql backend
+launch+=gmysql
+# gmysql parameters
+gmysql-host=127.0.0.1
+gmysql-port=3306
+gmysql-dbname=pda
+gmysql-user=pda
+gmysql-password=WZFaug6nwv-kzy4mwz
+gmysql-dnssec=yes
+# gmysql-socket=
+
+nano /etc/mysql/mariadb.conf.d/50-server.cnf
+bind-address            = 0.0.0.0
+systemctl restart mariadb
+
+chmod 777 /etc/powerdns/pdns.d/pdns.local.gmysql.conf
+systemctl stop pdns
+pdns_server --daemon=no --guardian=no --loglevel=9
+###Done launching threads, ready to distribute questions[cevabı dönüyorsa servis çalışıyor demektir.]
+nano /etc/powerdns/pdns.conf
+
+api=yes
+api-key=WZFaug6nwv-kzy4mwz
+webserver=yes
+webserver-address=127.0.0.1
+webserver-port=8081
+
+systemctl start pdns
+
+curl -X POST --data '{"name":"blacklist-deny.fbu.edu.tr.", "kind": "Native", "masters": [], "nameservers": ["sv-dn-01.blacklist-deny.fbu.edu.tr."]}' -v -H 'X-API-Key: WZFaug6nwv-kzy4mwz' http://127.0.0.1:8081/api/v1/servers/localhost/zones | jq .
+curl -X PATCH --data '{"rrsets": [{"name": "sv-dn-01.blacklist-deny.fbu.edu.tr.", "type": "A", "ttl": 86400, "changetype": "REPLACE", "records": [ {"content": "10.21.0.69", "disabled": false }]}]}' -H 'X-API-Key: WZFaug6nwv-kzy4mwz' http://127.0.0.1:8081/api/v1/servers/localhost/zones/blacklist-deny.fbu.edu.tr. | jq .
+curl -H 'X-API-Key: WZFaug6nwv-kzy4mwz' http://127.0.0.1:8081/api/v1/servers/localhost/zones/blacklist-deny.fbu.edu.tr. | jq .
+pdns_control rediscover
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+curl -sL https://deb.nodesource.com/setup_14.x | sudo bash -
+curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | apt-key add -
+echo "deb https://dl.yarnpkg.com/debian/ stable main" | tee /etc/apt/sources.list.d/yarn.list
+
+apt install -y python3-dev git libmysqlclient-dev libsasl2-dev libldap2-dev libssl-dev libxml2-dev libxslt1-dev libxmlsec1-dev libffi-dev pkg-config apt-transport-https python3-venv build-essential curl nodejs yarn libpq-dev
+apt update -y
+git clone https://github.com/ngoduykhanh/PowerDNS-Admin.git /opt/web/powerdns-admin
+cd /opt/web/powerdns-admin
+python3 -mvenv ./venv
+source ./venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install psycopg2-binary
+###########################
+pip install -r requirements.txt
+cp /opt/web/powerdns-admin/configs/development.py /opt/web/powerdns-admin/configs/production.py
+nano /opt/web/powerdns-admin/configs/production.py
+
+import urllib.parse
+SECRET_KEY = '\x89\xe33\xf0@>"`\xbd\xad\x97\xbe\xb9\x8a\x1a\xb0'
+SQLA_DB_PASSWORD = 'WZFaug6nwv-kzy4mwz'
+
+python3 -c "import os; print(os.urandom(16))"
+
+export FLASK_CONF=../configs/production.py
+export FLASK_APP=powerdnsadmin/__init__.py
+flask db upgrade
+yarn install --pure-lockfile
+flask assets build
+./run.py
+
+localhost:9191
+
+sudo nano /etc/systemd/system/powerdns-admin.service
+
+[Unit]
+Description=PowerDNS-Admin
+Requires=powerdns-admin.socket
+After=network.target
+
+[Service]
+User=root
+Group=root
+PIDFile=/run/powerdns-admin/pid
+WorkingDirectory=/opt/web/powerdns-admin
+ExecStartPre=/bin/bash -c '$$(mkdir -p /run/powerdns-admin/)'
+ExecStart=/opt/web/powerdns-admin/venv/bin/gunicorn --pid /run/powerdns-admin/pid --bind unix:/run/powerdns-admin/socket 'powerdnsadmin:create_app()'
+ExecReload=/bin/kill -s HUP $MAINPID
+ExecStop=/bin/kill -s TERM $MAINPID
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+
+sudo systemctl edit --force powerdns-admin.service
+
+[Service]
+Environment="FLASK_CONF=../configs/production.py"
+
+sudo nano /etc/systemd/system/powerdns-admin.socket
+
+[Unit]
+Description=PowerDNS-Admin socket
+
+[Socket]
+ListenStream=/run/powerdns-admin/socket
+
+[Install]
+WantedBy=sockets.target
+
+sudo nano /etc/tmpfiles.d/powerdns-admin.conf
+d /run/powerdns-admin 0755 pdns pdns -
+
+sudo systemctl daemon-reload
+sudo systemctl start powerdns-admin.service powerdns-admin.socket
+sudo systemctl enable powerdns-admin.service powerdns-admin.socket
+
+sudo apt install nginx -y
+sudo nano /etc/nginx/conf.d/pdns-admin.conf
+
+server {
+  listen *:80;
+  server_name               sv-dn-01;
+
+  index                     index.html index.htm index.php;
+  root                      /opt/web/powerdns-admin;
+  access_log                /var/log/nginx/powerdns-admin.local.access.log combined;
+  error_log                 /var/log/nginx/powerdns-admin.local.error.log;
+
+  client_max_body_size              10m;
+  client_body_buffer_size           128k;
+  proxy_redirect                    off;
+  proxy_connect_timeout             90;
+  proxy_send_timeout                90;
+  proxy_read_timeout                90;
+  proxy_buffers                     32 4k;
+  proxy_buffer_size                 8k;
+  proxy_set_header                  Host $host;
+  proxy_set_header                  X-Real-IP $remote_addr;
+  proxy_set_header                  X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_headers_hash_bucket_size    64;
+
+  location ~ ^/static/  {
+    include  /etc/nginx/mime.types;
+    root /opt/web/powerdns-admin/powerdnsadmin;
+
+    location ~*  \.(jpg|jpeg|png|gif)$ {
+      expires 365d;
+    }
+
+    location ~* ^.+.(css|js)$ {
+      expires 7d;
+    }
+  }
+
+  location / {
+    proxy_pass            http://unix:/run/powerdns-admin/socket;
+    proxy_read_timeout    120;
+    proxy_connect_timeout 120;
+    proxy_redirect        off;
+  }
+
+}
+
+nginx -t
+sudo chown -R www-data:www-data /opt/web/powerdns-admin
+sudo systemctl restart nginx
+
+
+sudo systemctl restart pdns
+
+http://sv-dn-01
+
+
+
+
+
+
+
+
+
+
